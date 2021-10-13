@@ -1,2 +1,2 @@
 # cloud_thickness
-Finds the thickness of a surface in a point cloud
+Finds the "fuzziness" of a surface in a point cloud, such as that derived from structure from motion photogrammetry.
