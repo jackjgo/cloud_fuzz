@@ -174,8 +174,10 @@ def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,points,radius,length):
     
     cylXYZ = cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length)
     zStd = np.std(cylXYZ[2,:])
+
     histo = np.histogram(cylXYZ[2,:],bins=20) # Increase the resolution of the 
     # layer search by increasing the number of bins
+
     return zStd, histo
 
 def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
@@ -211,18 +213,17 @@ def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
                                     downCloud[2,i], downCloud[3,i], 
                                     downCloud[4,i], downCloud[5,i], 
                                     points, radius, length)
+
         peaks = find_peaks(histo[0])[0] # If this is too sensitive, add 
         # threshold, distance, or prominence arguments. See SciPy docs
         numPeaks[i] = np.shape(peaks)[0]
         return
     
-
     for i in tqdm(range(0,(np.shape(downCloud[1,:])[0])), 
                   position=0, 
                   leave=True):
         calcDev(i)
-        
-        
+              
     #-------------------Write output file-------------------
     fuzzCloud = np.zeros([5,(np.shape(downCloud[1,:])[0])])
     fuzzCloud[0:3,:] = downCloud[0:3,:]
