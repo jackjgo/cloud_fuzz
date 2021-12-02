@@ -10,22 +10,19 @@ import numpy as np
 import pandas as pd
 import laspy
 from tqdm import tqdm
+# from joblib import Parallel, delayed
+from scipy.signal import find_peaks
 
 def downSample(inFile, outFile, samplingDist):
-    # inFile: input filename (.las or .laz)
-    # outFile: file destination for downsampled point cloud with normals (.txt)
-    
     json = """
     [
          "%s",
          {
-             "type": "filters.voxelcenternearestneighbor",
-             "cell": %s
+             "type": "filters.smrf"
          },
          {
-             "type": "filters.mad",
-             "dimension": "z",
-             "k": 2.0
+             "type":"filters.range",
+             "limits":"Classification[2:2]"
          },
          {
              "type": "filters.voxelcenternearestneighbor",
@@ -42,8 +39,41 @@ def downSample(inFile, outFile, samplingDist):
              "filename": "%s"
          }
     ]
-    """ % (inFile, (samplingDist / 10), samplingDist, outFile)
+    """ % (inFile, samplingDist, outFile)  
     
+    #-----------Alternative downsampling pipeline----------
+    
+    # inFile: input filename (.las or .laz)
+    # outFile: file destination for downsampled point cloud with normals (.txt)
+    
+    # json = """
+    # [
+    #      "%s",
+    #      {
+    #          "type": "filters.voxelcenternearestneighbor",
+    #          "cell": %s
+    #      },
+    #      {
+    #          "type": "filters.mad",
+    #          "dimension": "z",
+    #          "k": 2.0
+    #      },
+    #      {
+    #          "type": "filters.voxelcenternearestneighbor",
+    #          "cell": %s
+    #      },
+    #      {
+    #          "type": "filters.normal",
+    #          "knn": 8
+    #      },
+    #      {
+    #          "type": "writers.text",
+    #          "order": "X,Y,Z,NormalX,NormalY,NormalZ,Curvature",
+    #          "keep_unspecified": "false",
+    #          "filename": "%s"
+    #      }
+    # ]
+    # """ % (inFile, (samplingDist / 10), samplingDist, outFile)
     pipeline = pdal.Pipeline(json)
     count = pipeline.execute()
     arrays = pipeline.arrays
@@ -62,11 +92,6 @@ def sphereSearch(x,y,z,points,radius):
     # radius: radius of spherical search
     
     dists = np.zeros(np.shape(points[0,:]))
-    # for i in range(0,(np.shape(points[1,:])[0] - 1)):
-    #     print(i)
-    #     dists[i] = np.sqrt((x[i] - points[0,:])**2 + 
-    #                        (y[i] - points[1,:])**2 + 
-    #                        (z[i] - points[2,:])**2) 
     dists[:] = np.sqrt((x - points[0,:])**2 + 
                        (y - points[1,:])**2 + 
                        (z - points[2,:])**2)
@@ -134,33 +159,25 @@ def cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length):
     
     return xyz_inCyl
 
-def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,fullCloud,radius,length):
+def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,points,radius,length):
     # Returns the standard deviation of points' position along the cylinder 
-    # axis
+    # axis and number of peaks
     # x: center point x coordinate
     # y: center point y coordinate
     # z: center point z coordinate
     # xNorm: Normal vector x component
     # yNorm: Normal vector y component
     # zNorm: Normal vector z component
-    # fullCloud: full point cloud laspy object
+    # points: xyz coordinates of full point cloud
     # radius: radius of cylinder
     # length: length of cylinder
     
-    # Define xyz coordinates from laspy object
-    Xs = fullCloud.x
-    Xs = ((Xs.array * Xs.scale) + Xs.offset)
-    Ys = fullCloud.y
-    Ys = ((Ys.array * Ys.scale) + Ys.offset)
-    # Ys = Ys[::10]
-    Zs = fullCloud.z
-    Zs = ((Zs.array * Zs.scale) + Zs.offset)
-    points = np.vstack([[Xs],[Ys],[Zs]])
-
-
     cylXYZ = cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length)
     zStd = np.std(cylXYZ[2,:])
-    return zStd
+    global histo
+    histo = np.histogram(cylXYZ[2,:],bins=20)
+    print(zStd)
+    return zStd, histo
 
 def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
     # inFile: input point cloud
@@ -171,6 +188,14 @@ def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
     # length: length of the cylinder
     
     fullCloud = laspy.read(inFile)
+    Xs = fullCloud.x
+    Xs = ((Xs.array * Xs.scale) + Xs.offset)
+    Ys = fullCloud.y
+    Ys = ((Ys.array * Ys.scale) + Ys.offset)
+    # Ys = Ys[::10]
+    Zs = fullCloud.z
+    Zs = ((Zs.array * Zs.scale) + Zs.offset)
+    points = np.vstack([[Xs],[Ys],[Zs]])    
     
     #-----------------------Downsample----------------------
     downSample(inFile, normalsFile, samplingDist)
@@ -179,26 +204,37 @@ def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
     
     #------------------Calculate Deviations-----------------
     zStds = np.zeros(np.shape(downCloud[0,:]))
-    for i in tqdm(range(0,(np.shape(downCloud[1,:])[0]))):
-        # print(i)
-        zStds[i] = fuzzStdev(downCloud[0,i], downCloud[1,i], downCloud[2,i], 
+    numPeaks = np.zeros(np.shape(downCloud[0,:]))
+    histo = 0
+    
+    def calcDev(i):
+        zStds[i], histo = fuzzStdev(downCloud[0,i], downCloud[1,i], downCloud[2,i], 
                              downCloud[3,i], downCloud[4,i], downCloud[5,i], 
-                             fullCloud, radius, length)
+                             points, radius, length)
+        peaks = find_peaks(histo[0])[0] # If this is too sensitive, add 
+        # threshold, distance, or prominence arguments. See SciPy docs
+        numPeaks[i] = np.shape(peaks)[0]
+        return
+    
+    for i in tqdm(range(0,(np.shape(downCloud[1,:])[0]))):
+        calcDev(i)
+        
         
     #-------------------Write output file-------------------
-    fuzzCloud = np.zeros([4,(np.shape(downCloud[1,:])[0])])
+    fuzzCloud = np.zeros([5,(np.shape(downCloud[1,:])[0])])
     fuzzCloud[0:3,:] = downCloud[0:3,:]
     fuzzCloud[3,:] = zStds
+    fuzzCloud[4,:] = numPeaks
     fuzzCloud = fuzzCloud.T
-    outDf = pd.DataFrame(fuzzCloud, columns=['X','Y','Z','fuzz'])
+    outDf = pd.DataFrame(fuzzCloud, columns=['X','Y','Z','fuzz','layers'])
     outDf.to_csv(outFile,index=False)
     
     return
 
 #------------------------Example------------------------
-cloud_fuzz('./data/test1.las',
-           './data/normals.txt',
-           './data/output.csv',
-           10,
-           0.5,
-           1)
+# cloud_fuzz('./data/test1.las',
+#            './data/normals.txt',
+#            './data/output.csv',
+#            10,
+#            0.5,
+#            1)
