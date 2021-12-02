@@ -174,9 +174,10 @@ def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,points,radius,length):
     
     cylXYZ = cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length)
     zStd = np.std(cylXYZ[2,:])
-    global histo
-    histo = np.histogram(cylXYZ[2,:],bins=20)
-    print(zStd)
+
+    histo = np.histogram(cylXYZ[2,:],bins=20) # Increase the resolution of the 
+    # layer search by increasing the number of bins
+
     return zStd, histo
 
 def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
@@ -184,8 +185,8 @@ def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
     # normalsFile: destination for downsampled normals point cloud
     # samplingDist: downsampling distance
     # outFile: destination for downsampled point cloud with fuzz values
-    # radius: radius of the cylinder
-    # length: length of the cylinder
+    # radius: radius of the cylinder in point cloud units
+    # length: length of the cylinder in point cloud units
     
     fullCloud = laspy.read(inFile)
     Xs = fullCloud.x
@@ -205,21 +206,24 @@ def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
     #------------------Calculate Deviations-----------------
     zStds = np.zeros(np.shape(downCloud[0,:]))
     numPeaks = np.zeros(np.shape(downCloud[0,:]))
-    histo = 0
+    histo = []
     
     def calcDev(i):
-        zStds[i], histo = fuzzStdev(downCloud[0,i], downCloud[1,i], downCloud[2,i], 
-                             downCloud[3,i], downCloud[4,i], downCloud[5,i], 
-                             points, radius, length)
+        zStds[i], histo = fuzzStdev(downCloud[0,i], downCloud[1,i], 
+                                    downCloud[2,i], downCloud[3,i], 
+                                    downCloud[4,i], downCloud[5,i], 
+                                    points, radius, length)
+
         peaks = find_peaks(histo[0])[0] # If this is too sensitive, add 
         # threshold, distance, or prominence arguments. See SciPy docs
         numPeaks[i] = np.shape(peaks)[0]
         return
     
-    for i in tqdm(range(0,(np.shape(downCloud[1,:])[0]))):
+    for i in tqdm(range(0,(np.shape(downCloud[1,:])[0])), 
+                  position=0, 
+                  leave=True):
         calcDev(i)
-        
-        
+              
     #-------------------Write output file-------------------
     fuzzCloud = np.zeros([5,(np.shape(downCloud[1,:])[0])])
     fuzzCloud[0:3,:] = downCloud[0:3,:]
@@ -233,8 +237,8 @@ def cloud_fuzz(inFile, normalsFile, outFile, samplingDist, radius, length):
 
 #------------------------Example------------------------
 # cloud_fuzz('./data/test1.las',
-#            './data/normals.txt',
-#            './data/output.csv',
-#            10,
-#            0.5,
-#            1)
+#             './data/normals.txt',
+#             './data/output.csv',
+#             10,
+#             0.5,
+#             1)
