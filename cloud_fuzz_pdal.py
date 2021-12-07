@@ -198,7 +198,7 @@ def cloud_fuzz(inFile,
     # ghosting layers
     # dist: Distance argument for find_peaks (see scipy docs)
     # prom: prominence aregument for find_peaks (seescipy docs)
-    prom
+
     fullCloud = laspy.read(inFile)
     Xs = fullCloud.x
     Xs = ((Xs.array * Xs.scale) + Xs.offset)
