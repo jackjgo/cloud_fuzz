@@ -217,7 +217,7 @@ def cloud_fuzz(inFile,
     #------------------Calculate Deviations-----------------
     zStds = np.zeros(np.shape(downCloud[0,:]))
     numPeaks = np.zeros(np.shape(downCloud[0,:]))
-    
+    maxDist = np.zeros(np.shape(downCloud[0,:]))
     def calcDev(i):
         global histo
         zStds[i], histo = fuzzStdev(downCloud[0,i], downCloud[1,i], 
@@ -225,7 +225,10 @@ def cloud_fuzz(inFile,
                                     downCloud[4,i], downCloud[5,i], 
                                     points, radius, length,layer_thickness)
         peaks = find_peaks(histo[0],distance=dist,prominence=prom)[0]
+        print(peaks)
         numPeaks[i] = np.shape(peaks)[0]
+        if numPeaks[i] > 1:
+            maxDist[i] = (max(peaks) - min(peaks)) * layer_thickness
         return
     
 
@@ -236,21 +239,27 @@ def cloud_fuzz(inFile,
         
         
     #-------------------Write output file-------------------
-    fuzzCloud = np.zeros([5,(np.shape(downCloud[1,:])[0])])
+    fuzzCloud = np.zeros([6,(np.shape(downCloud[1,:])[0])])
     fuzzCloud[0:3,:] = downCloud[0:3,:]
     fuzzCloud[3,:] = zStds
     fuzzCloud[4,:] = numPeaks
+    fuzzCloud[5,:] = maxDist
     fuzzCloud = fuzzCloud.T
-    outDf = pd.DataFrame(fuzzCloud, columns=['X','Y','Z','fuzz','layers'])
+    outDf = pd.DataFrame(fuzzCloud, columns=['X',
+                                             'Y',
+                                             'Z',
+                                             'fuzz',
+                                             'layers',
+                                             'layer distance'])
     outDf.to_csv(outFile,index=False)
     
     return
 
 #------------------------Example------------------------
-cloud_fuzz('./data/test1.las',
-            './data/normals.txt',
-            './data/output4.csv',
-            10,
-            0.5,
-            1,
-            layer_thickness=0.01)
+# cloud_fuzz('./data/test1.las',
+#             './data/normals.txt',
+#             './data/output4.csv',
+#             10,
+#             0.5,
+#             1,
+#             layer_thickness=0.01)
