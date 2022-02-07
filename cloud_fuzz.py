@@ -1,8 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Oct 26 09:47:46 2021
+Copyright (c) 2022 Jack Gonzales.
 
-@author: jgonzales
+This program is free software: you can redistribute it and/or modify  
+it under the terms of the GNU Lesser General Public License as published by  
+the Free Software Foundation, version 2.1.
+
+This program is distributed in the hope that it will be useful, but 
+WITHOUT ANY WARRANTY; without even the implied warranty of 
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License 
+along with this program. If not, see 
+http://http://www.gnu.org/licenses
 """
 
 import pdal
@@ -10,7 +21,6 @@ import numpy as np
 import pandas as pd
 import laspy
 from tqdm import tqdm
-# from joblib import Parallel, delayed
 from scipy.signal import find_peaks
 from scipy.spatial import KDTree
 
@@ -86,7 +96,7 @@ def sphereSearch(x,y,z,points,radius):
     # Takes a point's xyz coordinates, then calculates the distance to this 
     # point from every point in array points, and returns all points within
     # distance radius.
-    # Note this is no obselete as the KD Tree search is much faster
+    # Nota Bene: this is now obselete as the KD Tree search is much faster
     # x: center point x coordinate
     # y: center point y coordinate
     # z: center point z coordinate
@@ -121,9 +131,6 @@ def cylinderSearch(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length):
     #--------Search for all possible cylinder points--------
     maxDist = np.sqrt(radius**2 + (length / 2)**2) # The maximum distance a 
     # point can be from the center and still be within the cylinder
-    # spherePoints = sphereSearch(x,y,z,points,maxDist)
-    centerPoint = [x,y,z]
-    tree1 = tree
     spherePointInds = tree.query_ball_point([x,y,z], maxDist)
     spherePoints = points[:,spherePointInds]
     
@@ -166,7 +173,17 @@ def cylinderSearch(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length):
     
     return xyz_inCyl
 
-def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length,layer_thickness):
+def fuzzStdev(x,
+              y,
+              z,
+              xNorm,
+              yNorm,
+              zNorm,
+              tree,
+              points,
+              radius,
+              length,
+              layer_thickness):
     # Returns the standard deviation of points' position along the cylinder 
     # axis and number of peaks
     # x: center point x coordinate
@@ -183,8 +200,8 @@ def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length,layer_thickness)
     cylXYZ = cylinderSearch(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length)
     zStd = np.std(cylXYZ[2,:])
     numBins = int(length / layer_thickness)
-    histo = np.histogram(cylXYZ[2,:],bins=numBins) # Increase the resolution of the 
-    # layer search by increasing the number of bins
+    histo = np.histogram(cylXYZ[2,:],bins=numBins) # Increase the resolution of
+    # the layer search by increasing the number of bins
     return zStd, histo
 
 def cloud_fuzz(inFile, 
@@ -207,6 +224,7 @@ def cloud_fuzz(inFile,
     # dist: Distance argument for find_peaks (see scipy docs)
     # prom: prominence aregument for find_peaks (seescipy docs)
 
+    #--------------------Load point cloud-------------------
     fullCloud = laspy.read(inFile)
     Xs = fullCloud.x
     Xs = ((Xs.array * Xs.scale) + Xs.offset)
@@ -215,7 +233,8 @@ def cloud_fuzz(inFile,
     # Ys = Ys[::10]
     Zs = fullCloud.z
     Zs = ((Zs.array * Zs.scale) + Zs.offset)
-    points = np.vstack([[Xs],[Ys],[Zs]])    
+    points = np.vstack([[Xs],[Ys],[Zs]])  
+    #----------------------Build KD Tree--------------------
     tree = KDTree(points.T)
     
     #-----------------------Downsample----------------------
@@ -267,7 +286,7 @@ def cloud_fuzz(inFile,
 #------------------------Example------------------------
 cloud_fuzz('./data/test1.las',
             './data/normals.txt',
-            './data/output5.csv',
+            './data/output.csv',
             .5,
             0.5,
             1,
