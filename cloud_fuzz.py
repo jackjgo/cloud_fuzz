@@ -1,8 +1,19 @@
 # -*- coding: utf-8 -*-
 """
-Created on Tue Oct 26 09:47:46 2021
+Copyright (c) 2022 Jack Gonzales.
 
-@author: jgonzales
+This program is free software: you can redistribute it and/or modify  
+it under the terms of the GNU Lesser General Public License as published by  
+the Free Software Foundation, version 2.1.
+
+This program is distributed in the hope that it will be useful, but 
+WITHOUT ANY WARRANTY; without even the implied warranty of 
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU 
+General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License 
+along with this program. If not, see 
+http://http://www.gnu.org/licenses
 """
 
 import pdal
@@ -10,8 +21,8 @@ import numpy as np
 import pandas as pd
 import laspy
 from tqdm import tqdm
-# from joblib import Parallel, delayed
 from scipy.signal import find_peaks
+from scipy.spatial import KDTree
 
 def downSample(inFile, outFile, samplingDist):
     json = """
@@ -85,6 +96,7 @@ def sphereSearch(x,y,z,points,radius):
     # Takes a point's xyz coordinates, then calculates the distance to this 
     # point from every point in array points, and returns all points within
     # distance radius.
+    # Nota Bene: this is now obselete as the KD Tree search is much faster
     # x: center point x coordinate
     # y: center point y coordinate
     # z: center point z coordinate
@@ -100,17 +112,18 @@ def sphereSearch(x,y,z,points,radius):
     
     return spherePoints
 
-def cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length):
+def cylinderSearch(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length):
     # Returns points within a cylinder of given dimensions centered on xyz and
     # aligned with the normal vector. Returned point coordinates are in a 
     # modified space, with the origin at xyz and the z axis aligned with the
-    # normal vector
+    # normal vector.
     # x: center point x coordinate
     # y: center point y coordinate
     # z: center point z coordinate
     # xNorm: Normal vector x component
     # yNorm: Normal vector y component
     # zNorm: Normal vector z component
+    # tree: KD tree containing all the points for accelerated cylinder search
     # points: array of all xyz coordinates in a point cloud
     # radius: radius of cylinder
     # length: length of cylinder
@@ -118,7 +131,8 @@ def cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length):
     #--------Search for all possible cylinder points--------
     maxDist = np.sqrt(radius**2 + (length / 2)**2) # The maximum distance a 
     # point can be from the center and still be within the cylinder
-    spherePoints = sphereSearch(x,y,z,points,maxDist)
+    spherePointInds = tree.query_ball_point([x,y,z], maxDist)
+    spherePoints = points[:,spherePointInds]
     
     #-------------------Set origin to xyz-------------------
     spherePoints[0,:] += (x * (-1))
@@ -159,7 +173,17 @@ def cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length):
     
     return xyz_inCyl
 
-def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,points,radius,length,layer_thickness):
+def fuzzStdev(x,
+              y,
+              z,
+              xNorm,
+              yNorm,
+              zNorm,
+              tree,
+              points,
+              radius,
+              length,
+              layer_thickness):
     # Returns the standard deviation of points' position along the cylinder 
     # axis and number of peaks
     # x: center point x coordinate
@@ -168,15 +192,16 @@ def fuzzStdev(x,y,z,xNorm,yNorm,zNorm,points,radius,length,layer_thickness):
     # xNorm: Normal vector x component
     # yNorm: Normal vector y component
     # zNorm: Normal vector z component
+    # tree: KD tree containing all the points for accelerated cylinder search
     # points: xyz coordinates of full point cloud
     # radius: radius of cylinder
     # length: length of cylinder
     
-    cylXYZ = cylinderSearch(x,y,z,xNorm,yNorm,zNorm,points,radius,length)
+    cylXYZ = cylinderSearch(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length)
     zStd = np.std(cylXYZ[2,:])
     numBins = int(length / layer_thickness)
-    histo = np.histogram(cylXYZ[2,:],bins=numBins) # Increase the resolution of the 
-    # layer search by increasing the number of bins
+    histo = np.histogram(cylXYZ[2,:],bins=numBins) # Increase the resolution of
+    # the layer search by increasing the number of bins
     return zStd, histo
 
 def cloud_fuzz(inFile, 
@@ -199,6 +224,7 @@ def cloud_fuzz(inFile,
     # dist: Distance argument for find_peaks (see scipy docs)
     # prom: prominence aregument for find_peaks (seescipy docs)
 
+    #--------------------Load point cloud-------------------
     fullCloud = laspy.read(inFile)
     Xs = fullCloud.x
     Xs = ((Xs.array * Xs.scale) + Xs.offset)
@@ -207,7 +233,9 @@ def cloud_fuzz(inFile,
     # Ys = Ys[::10]
     Zs = fullCloud.z
     Zs = ((Zs.array * Zs.scale) + Zs.offset)
-    points = np.vstack([[Xs],[Ys],[Zs]])    
+    points = np.vstack([[Xs],[Ys],[Zs]])  
+    #----------------------Build KD Tree--------------------
+    tree = KDTree(points.T)
     
     #-----------------------Downsample----------------------
     downSample(inFile, normalsFile, samplingDist)
@@ -219,13 +247,13 @@ def cloud_fuzz(inFile,
     numPeaks = np.zeros(np.shape(downCloud[0,:]))
     maxDist = np.zeros(np.shape(downCloud[0,:]))
     def calcDev(i):
-        global histo
         zStds[i], histo = fuzzStdev(downCloud[0,i], downCloud[1,i], 
                                     downCloud[2,i], downCloud[3,i], 
                                     downCloud[4,i], downCloud[5,i], 
-                                    points, radius, length,layer_thickness)
+                                    tree, points, radius, 
+                                    length,layer_thickness)
         peaks = find_peaks(histo[0],distance=dist,prominence=prom)[0]
-        print(peaks)
+        # print(peaks)
         numPeaks[i] = np.shape(peaks)[0]
         if numPeaks[i] > 1:
             maxDist[i] = (max(peaks) - min(peaks)) * layer_thickness
@@ -256,10 +284,10 @@ def cloud_fuzz(inFile,
     return
 
 #------------------------Example------------------------
-# cloud_fuzz('./data/test1.las',
-#             './data/normals.txt',
-#             './data/output4.csv',
-#             10,
-#             0.5,
-#             1,
-#             layer_thickness=0.01)
+cloud_fuzz('./data/test1.las',
+            './data/normals.txt',
+            './data/output.csv',
+            .5,
+            0.5,
+            1,
+            layer_thickness=0.01)
