@@ -1,4 +1,4 @@
-name: jack_pdal
+name: cloud_fuzz
 channels:
   - conda-forge
   - defaults
