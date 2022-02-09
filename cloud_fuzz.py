@@ -20,11 +20,13 @@ import pdal
 import numpy as np
 import pandas as pd
 import laspy
+import os
 from tqdm import tqdm
 from scipy.signal import find_peaks
 from scipy.spatial import KDTree
 
-def downSample(inFile, outFile, samplingDist):
+def downSample(inFile, samplingDist):
+    outFile = "./temp/normals.txt"
     json = """
     [
          "%s",
@@ -204,8 +206,7 @@ def fuzzStdev(x,
     # the layer search by increasing the number of bins
     return zStd, histo
 
-def cloud_fuzz(inFile, 
-               normalsFile, 
+def cloud_fuzz(inFile,  
                outFile, 
                samplingDist, 
                radius, 
@@ -234,13 +235,18 @@ def cloud_fuzz(inFile,
     Zs = fullCloud.z
     Zs = ((Zs.array * Zs.scale) + Zs.offset)
     points = np.vstack([[Xs],[Ys],[Zs]])  
+    
     #----------------------Build KD Tree--------------------
     tree = KDTree(points.T)
     
     #-----------------------Downsample----------------------
-    downSample(inFile, normalsFile, samplingDist)
+    os.mkdir('./temp/')
+    downSample(inFile, samplingDist)
+    normalsFile = './temp/normals.txt'
     df = pd.read_csv(normalsFile)
     downCloud = df.to_numpy().T
+    os.remove(normalsFile)
+    os.rmdir('./temp/')
     
     #------------------Calculate Deviations-----------------
     zStds = np.zeros(np.shape(downCloud[0,:]))
@@ -285,7 +291,6 @@ def cloud_fuzz(inFile,
 
 #------------------------Example------------------------
 cloud_fuzz('./data/test1.las',
-            './data/normals.txt',
             './data/output.csv',
             .5,
             0.5,
