@@ -213,7 +213,7 @@ def cloud_fuzz(inFile,
                length, 
                layer_thickness = 0.05,
                dist = 2,
-               prom = 20):
+               prom = 5):
     # inFile: input point cloud
     # normalsFile: destination for downsampled normals point cloud
     # samplingDist: downsampling distance
@@ -258,7 +258,7 @@ def cloud_fuzz(inFile,
                                     downCloud[4,i], downCloud[5,i], 
                                     tree, points, radius, 
                                     length,layer_thickness)
-        peaks = find_peaks(histo[0],distance=dist,prominence=prom)[0]
+        peaks = find_peaks(histo[0])[0]
         # print(peaks)
         numPeaks[i] = np.shape(peaks)[0]
         if numPeaks[i] > 1:
@@ -290,9 +290,9 @@ def cloud_fuzz(inFile,
     return
 
 #------------------------Example------------------------
-cloud_fuzz('./data/test1.las',
-            './data/output.csv',
+cloud_fuzz('./data/test_section.las',
+            './data/output_KD5.csv',
             .5,
             0.5,
             1,
-            layer_thickness=0.01)
+            layer_thickness=0.1)
