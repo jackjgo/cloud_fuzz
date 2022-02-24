@@ -201,10 +201,11 @@ def fuzzStdev(x,
     
     cylXYZ = cylinderSearch(x,y,z,xNorm,yNorm,zNorm,tree,points,radius,length)
     zStd = np.std(cylXYZ[2,:])
+    pointCount = np.shape(cylXYZ[1,:])[1]
     numBins = int(length / layer_thickness)
     histo = np.histogram(cylXYZ[2,:],bins=numBins) # Increase the resolution of
     # the layer search by increasing the number of bins
-    return zStd, histo
+    return zStd, histo, pointCount
 
 def cloud_fuzz(inFile,  
                outFile, 
@@ -218,7 +219,9 @@ def cloud_fuzz(inFile,
     # normalsFile: destination for downsampled normals point cloud
     # samplingDist: downsampling distance
     # outFile: destination for downsampled point cloud with fuzz values
-    # radius: radius of the cylinder in point cloud units
+    # radius: radius of the cylinder in point cloud units. better results tend
+    # to come from using larger radius, but the radius should be appropriate
+    # for the terrain.
     # length: length of the cylinder in point cloud units
     # layer_thickness: thickness of each cylinder layer used to identify
     # ghosting layers
@@ -252,19 +255,20 @@ def cloud_fuzz(inFile,
     zStds = np.zeros(np.shape(downCloud[0,:]))
     numPeaks = np.zeros(np.shape(downCloud[0,:]))
     maxDist = np.zeros(np.shape(downCloud[0,:]))
+    numPoints = np.zeros(np.shape(downCloud[0,:]))
     def calcDev(i):
-        zStds[i], histo = fuzzStdev(downCloud[0,i], downCloud[1,i], 
-                                    downCloud[2,i], downCloud[3,i], 
-                                    downCloud[4,i], downCloud[5,i], 
-                                    tree, points, radius, 
-                                    length,layer_thickness)
+        zStds[i], histo, pointCount = fuzzStdev(downCloud[0,i], downCloud[1,i], 
+                                                downCloud[2,i], downCloud[3,i], 
+                                                downCloud[4,i], downCloud[5,i], 
+                                                tree, points, radius, 
+                                                length,layer_thickness)
         peaks = find_peaks(histo[0])[0]
-        # print(peaks)
         numPeaks[i] = np.shape(peaks)[0]
+        numPoints[i] = pointCount
+
         if numPeaks[i] > 1:
             maxDist[i] = (max(peaks) - min(peaks)) * layer_thickness
         return
-    
 
     for i in tqdm(range(0,(np.shape(downCloud[1,:])[0])), 
                   position=0, 
@@ -273,26 +277,28 @@ def cloud_fuzz(inFile,
         
         
     #-------------------Write output file-------------------
-    fuzzCloud = np.zeros([6,(np.shape(downCloud[1,:])[0])])
+    fuzzCloud = np.zeros([7,(np.shape(downCloud[1,:])[0])])
     fuzzCloud[0:3,:] = downCloud[0:3,:]
     fuzzCloud[3,:] = zStds
     fuzzCloud[4,:] = numPeaks
     fuzzCloud[5,:] = maxDist
+    fuzzCloud[6,:] = numPoints
     fuzzCloud = fuzzCloud.T
     outDf = pd.DataFrame(fuzzCloud, columns=['X',
                                              'Y',
                                              'Z',
                                              'fuzz',
                                              'layers',
-                                             'layer distance'])
+                                             'layer distance',
+                                             'num points'])
     outDf.to_csv(outFile,index=False)
     
     return
 
 #------------------------Example------------------------
-cloud_fuzz('./data/test_section.las',
-            './data/output_KD5.csv',
-            .5,
-            0.5,
-            1,
-            layer_thickness=0.1)
+# cloud_fuzz('./data/test_section.las',
+#             './data/output.csv',
+#             0.5,
+#             2,
+#             1,
+#             layer_thickness=0.1)
