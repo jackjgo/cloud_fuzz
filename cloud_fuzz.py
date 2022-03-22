@@ -262,7 +262,7 @@ def cloud_fuzz(inFile,
                                                 downCloud[4,i], downCloud[5,i], 
                                                 tree, points, radius, 
                                                 length,layer_thickness)
-        peaks = find_peaks(histo[0])[0]
+        peaks = find_peaks(histo[0])[0] # "height" parameter can reduce noise
         numPeaks[i] = np.shape(peaks)[0]
         numPoints[i] = pointCount
 
